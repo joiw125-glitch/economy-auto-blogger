@@ -2,8 +2,8 @@ name: Daily Economy Blog Generator
 
 on:
   schedule:
-    # UTC 기준 22시 30분 = 한국 시간 매일 아침 7시 30분
-    - cron: '30 22 * * *' 
+    # UTC 기준 21시 40분 = 한국 시간 매일 오전 6시 40분
+    - cron: '40 21 * * *' 
   workflow_dispatch:
 
 jobs:
