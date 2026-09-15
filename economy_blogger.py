@@ -1,6 +1,8 @@
 import os
+import time
 import requests
 from google import genai
+from google.genai.errors import ServerError, APIError
 
 # 환경 변수에서 키 불러오기
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -55,29 +57,45 @@ def generate_economy_content():
     - 이미지 생성 프롬프트: (신뢰감을 주는 금융/경제 스타일 배경에 중앙/하단에 선명한 한국어 텍스트 레이아웃이 적용된 썸네일 생성을 위한 영문 프롬프트)
     """
     
-    response = client.models.generate_content(
-        model="gemini-3.6-flash",
-        contents=prompt,
-    )
-    return response.text
+    # 서버 과부하(503 등) 발생 시 최대 3번까지 재시도하는 안전장치
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            print(f"제미나이 API 호출 시도 중... ({attempt + 1}/{max_retries})")
+            response = client.models.generate_content(
+                model="gemini-3.6-flash",
+                contents=prompt,
+            )
+            return response.text
+        except (ServerError, APIError) as e:
+            print(f"서버 과부하 또는 일시적 에러 발생: {e}")
+            if attempt < max_retries - 1:
+                print("5초 후 다시 시도합니다...")
+                time.sleep(5)
+            else:
+                raise e
 
-def send_to_telegram(message):
+def send_to_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     
-    # 텔레그램 전송 시 HTML 태그로 인한 에러를 방지하기 위해 일반 텍스트 모드로 전송합니다.
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message
-    }
-    
-    response = requests.post(url, json=payload)
-    if response.status_code == 200:
-        print("텔레그램으로 경제 글 전송 성공!")
+    # 텔레그램 글자 수 제한(4096자)을 우회하기 위해 4000자 단위로 쪼개서 전송
+    max_length = 4000
+    if len(text) <= max_length:
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text}
+        response = requests.post(url, json=payload)
+        if response.status_code != 200:
+            print(f"전송 실패! 에러 내용: {response.text}")
     else:
-        print(f"전송 실패! 에러 내용: {response.text}")
+        for i in range(0, len(text), max_length):
+            chunk = text[i:i + max_length]
+            payload = {"chat_id": TELEGRAM_CHAT_ID, "text": chunk}
+            response = requests.post(url, json=payload)
+            if response.status_code != 200:
+                print(f"분할 전송 실패! 에러 내용: {response.text}")
+                break
 
 if __name__ == "__main__":
-    print("메인 프로그램 시작")
+    print("경제 블로그 메인 프로그램 시작")
     blog_post = generate_economy_content()
     send_to_telegram(blog_post)
     print("모든 작업 종료")
